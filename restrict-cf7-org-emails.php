@@ -17,17 +17,17 @@ GitHub Plugin URI: overandall/restrictcontactformorgemail
 GitHub Branch: main
 */
 
-if (!defined('ABSPATH')) exit; // Exit if accessed directly
+if (!defined('ABSPATH')) exit; // Protect direct access
 
 // ===========================================
-// 1. Settings Page in WP Admin
+// 1. Admin Settings Page
 // ===========================================
 add_action('admin_menu', function() {
     add_options_page(
-        'Restrict CF7 Org Emails', 
-        'Restrict CF7 Org Emails', 
-        'manage_options', 
-        'restrict-cf7-org-emails', 
+        'Restrict CF7 Org Emails',
+        'Restrict CF7 Org Emails',
+        'manage_options',
+        'restrict-cf7-org-emails',
         'rcf7_org_emails_settings_page'
     );
 });
@@ -58,7 +58,7 @@ function rcf7_org_emails_settings_page() {
                     <td><input type="text" name="rcf7_email_field" value="<?php echo esc_attr(get_option('rcf7_email_field', 'corporate-email')); ?>" size="50"/></td>
                 </tr>
                 <tr valign="top">
-                    <th scope="row">Blocked Personal Domains (comma separated)</th>
+                    <th scope="row">Blocked Personal Domains</th>
                     <td><textarea name="rcf7_blocked_domains" rows="5" cols="50"><?php echo esc_textarea(get_option('rcf7_blocked_domains', 'gmail.com,yahoo.com,hotmail.com,outlook.com,live.com,aol.com,icloud.com,protonmail.com,rediffmail.com')); ?></textarea></td>
                 </tr>
             </table>
@@ -76,7 +76,7 @@ add_action('admin_init', function() {
 });
 
 // ===========================================
-// 2. Server-side Validation for Contact Form 7
+// 2. Server-side Validation
 // ===========================================
 add_filter('wpcf7_validate_email*', 'rcf7_org_email_validation', 20, 2);
 add_filter('wpcf7_validate_email', 'rcf7_org_email_validation', 20, 2);
@@ -85,12 +85,11 @@ function rcf7_org_email_validation($result, $tag) {
     $apply_globally = get_option('rcf7_apply_globally', 0);
     $form_ids = array_map('trim', explode(',', get_option('rcf7_form_ids', '')));
     $field_name = trim(get_option('rcf7_email_field', 'corporate-email'));
-    $blocked_domains = array_map('trim', explode(',', get_option('rcf7_blocked_domains', '')));
+    $blocked_domains = array_map('strtolower', array_map('trim', explode(',', get_option('rcf7_blocked_domains', ''))));
 
     if (!isset($_POST['_wpcf7'])) return $result;
-    $current_form_id = $_POST['_wpcf7'];
+    $current_form_id = sanitize_text_field($_POST['_wpcf7']);
 
-    // Check if this form should be validated
     if (!$apply_globally && !in_array($current_form_id, $form_ids)) {
         return $result;
     }
@@ -100,9 +99,9 @@ function rcf7_org_email_validation($result, $tag) {
     }
 
     $email = isset($_POST[$field_name]) ? sanitize_email($_POST[$field_name]) : '';
-    $domain = substr(strrchr($email, "@"), 1);
+    $domain = strtolower(trim(substr(strrchr($email, "@"), 1)));
 
-    if (in_array(strtolower($domain), array_map('strtolower', $blocked_domains))) {
+    if (in_array($domain, $blocked_domains)) {
         $result->invalidate($tag, "Please use your organization email address. Personal emails are not allowed.");
     }
 
@@ -110,19 +109,20 @@ function rcf7_org_email_validation($result, $tag) {
 }
 
 // ===========================================
-// 3. Client-side JavaScript Validation
+// 3. Client-side JS Validation
 // ===========================================
 add_action('wp_footer', function() {
     $apply_globally = get_option('rcf7_apply_globally', 0);
     $form_ids = array_map('trim', explode(',', get_option('rcf7_form_ids', '')));
     $field_name = esc_js(get_option('rcf7_email_field', 'corporate-email'));
-    $blocked_domains = array_map('trim', explode(',', get_option('rcf7_blocked_domains', '')));
+    $blocked_domains = array_map('strtolower', array_map('trim', explode(',', get_option('rcf7_blocked_domains', ''))));
     ?>
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         var applyGlobally = <?php echo $apply_globally ? 'true' : 'false'; ?>;
         var validFormIds = <?php echo json_encode($form_ids); ?>;
-        var blockedDomains = <?php echo json_encode(array_map('strtolower', $blocked_domains)); ?>;
+        var blockedDomains = <?php echo json_encode($blocked_domains); ?>;
+        var fieldName = "<?php echo $field_name; ?>";
 
         document.querySelectorAll('.wpcf7 form').forEach(function(form) {
             form.addEventListener('submit', function(e) {
@@ -132,12 +132,11 @@ add_action('wp_footer', function() {
                 var formId = formIdInput.value;
                 if (!applyGlobally && !validFormIds.includes(formId)) return;
 
-                var emailInput = form.querySelector('input[name="<?php echo $field_name; ?>"]');
+                var emailInput = form.querySelector('input[name="'+fieldName+'"]');
                 if (!emailInput) return;
 
                 var email = emailInput.value.trim();
                 var domain = email.split('@')[1];
-
                 if (domain && blockedDomains.includes(domain.toLowerCase())) {
                     e.preventDefault();
                     alert('Please use your organization email address. Personal emails are not allowed.');
